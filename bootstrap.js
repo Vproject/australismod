@@ -123,22 +123,28 @@ function uninstall(data, reason) {
 function loadIntoWindow(window) {
 	if (!window)
 		return;
-
+	let document = window.document;
     /* create newtoolbar and initialize navtoolbox and titletoolbar */
-	let titletoolbar = newtoolbar(window.document);
+	let titletoolbar = newtoolbar(document);
 
     /* adds titlebartext to titletoolbar and initializes titlebartext */
-	addtitle(window.document, titletoolbar);
+	addtitle(document, titletoolbar);
 
 	/* create, inject and override popup menu for tabbar, initializes tabbarmenupopup and tabbar */
-	overridetabbarpopupmenu(window.document);
+	overridetabbarpopupmenu(document);
 
 	/* adds close window option to tab context menu, initializes closewindowmenuitem and tabcontextmenu */
-	addclosewindowtotabmenu(window.document);
+	addclosewindowtotabmenu(document);
 
 	/* listen for double click on tabs, call dblclicklistener() and initializes tabs */
-	maximizeontabdoubleclick(window.document);
+	maximizeontabdoubleclick(document);
 
+	/*
+		listen for opening of a tab,
+		call scalenewtabtiles() to resize tiles instead of reducing the number of tiles
+	*/
+	window.addEventListener("TabOpen", scalenewtabtiles);
+	
 }
 
 function unloadFromWindow(window) {
@@ -176,6 +182,10 @@ function unloadFromWindow(window) {
 		tabs.removeEventListener('dblclick',dblclicklistener ,false);
 	}
 
+	if(scalenewtabtiles) {
+		window.removeEventListener("TabOpen", scalenewtabtiles ,true);
+		window.removeEventListener("TabOpen", scalenewtabtiles ,false);
+	}
 }
 
 
@@ -202,9 +212,6 @@ let windowListener = {
 
 /*
 	create a new toolbar
-	initializes:
-		navtoolbox
-		titletoolbar
 */
 function newtoolbar(document) {
 	if(!document || document.getElementById(titletoolbarid) )
@@ -231,9 +238,6 @@ function newtoolbar(document) {
 
 /*
 	adds titlebartext to titletoolbar
-	initializes:
-		titlebartext
-		titlebartextlabel
 */
 function addtitle(document, titletoolbar) {
 	if(!document )
@@ -276,7 +280,7 @@ function changestyles() {
 		* style new titlebar
 		* put navbar below new titlebar (using -moz-box-ordinal-group)
 		* adjust colors, borders for new toolbar order
-		* reduce padding, margins (including window borders and 
+		* reduce padding, margins (including space above tabbar)
 		* reduce tab and tabbar height
 		* tiles on newtab scale in size again, pref'd rows/columns preserved
 	*/
@@ -333,13 +337,6 @@ function changestyles() {
 	min-height: 27px !important;\
 }\
 \
-window#main-window, \
-window, \
-#main-window \
-{\
-	chromemargin: 0,1,1,1 !important;\
-}\
-\
 #TabsToolbar \
 {\
 	margin-top: 0px !important;\
@@ -347,14 +344,20 @@ window, \
 \
 .newtab-cell \
 {\
-	height: 104px !important;\
-	width: 148px !important;\
     -moz-box-flex: 1;\
 }\
 \
 .newtab-row \
 {\
     -moz-box-flex: 1;\
+    display: -moz-box;\
+}\
+#newtab-grid \
+{\
+	display: -moz-box;\
+	-moz-box-orient: vertical;\
+	margin-bottom: 25px;\
+	overflow: visible !important;\
 }';
 
 		cssdata = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService).newURI('data:text/css,' + encodeURIComponent(css), null, null);
@@ -370,9 +373,6 @@ window, \
 
 /*
 	create, inject and override popup menu for tabbar
-	initializes:
-		tabbarmenupopup
-		tabbar
 */
 function overridetabbarpopupmenu(document) {
 	let tabbarmenupopup = document.createElement('menupopup');
@@ -392,9 +392,6 @@ function overridetabbarpopupmenu(document) {
 
 /*
 	adds close window option to tab context menu
-	initializes:
-		closewindowmenuitem
-		tabcontextmenu
 */
 function addclosewindowtotabmenu(document) {
 	let closewindowmenuitem = document.createElement('menuitem');
@@ -428,11 +425,63 @@ function dblclicklistener(event) {
 
 /*
 	listen for double click on tabs, call dblclicklistener()
-	initializes:
-		tabs
 */
 function maximizeontabdoubleclick(document) {
 	let tabs = document.getElementById(tabsid);
 	if(tabs && dblclicklistener)
 		tabs.addEventListener('dblclick',dblclicklistener);
+}
+
+
+/*
+	modify about:newtab page to resize tiles instead of reducing the number of visible tiles
+*/
+function scalenewtabtiles(event) {
+	let browser = event.target.linkedBrowser;
+	if(browser.currentURI.asciiSpec == 'about:newtab') {
+
+		let grid = browser.contentWindow.gGrid;
+		if(grid && grid._shouldRenderGrid) {
+
+			/* override function to prevent recalculation of grid dimensions */
+			grid._shouldRenderGrid = function() {return false;};
+			grid._resizeGrid = function() { };
+
+
+			/*
+				move tiles in row elements
+			*/
+			let gridnode = grid._node;
+			gridnode.style = 'display: none;';
+
+			let document = browser.contentDocument;
+
+			let newgrid = document.createDocumentFragment();
+			let cells = gridnode.children;
+			let numcell = cells.length;
+
+			/* create namespaced element, otherwise contextmenu won't show on right click */
+			let protorow = document.createElementNS('http://www.w3.org/1999/xhtml','div');
+			protorow.className = 'newtab-row';
+			
+			/* load gGridPrefs.gridRows and gGridPrefs.gridColums to local variables */
+			let {gridRows, gridColumns} = browser.contentWindow.gGridPrefs;
+
+			for(let i = 0, j, k=0; i<gridRows; i++)
+			{
+				let row = protorow.cloneNode(false);
+				for(j = 0; j<gridColumns && k < numcell; j++, k++)
+				{
+					let cell = cells[0];
+					gridnode.removeChild(cell);
+					row.appendChild(cell);
+				}
+				newgrid.appendChild( row );
+			}
+			gridnode.appendChild(newgrid);
+
+			gridnode.style = '';
+
+		}
+	}
 }

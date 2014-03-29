@@ -4,7 +4,7 @@
 	xmlns:em="http://www.mozilla.org/2004/em-rdf#">
 	<Description about="urn:mozilla:install-manifest">
 		<em:name>Australis-mod</em:name>
-		<em:version>1.0.0</em:version>
+		<em:version>1.1.0</em:version>
 		<em:id>australismod@V.project</em:id>
 		<em:type>2</em:type>
 		<em:targetApplication>
