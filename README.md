@@ -9,10 +9,13 @@ Restartless Firefox extension that modifies browsers with Australis in a few way
 * maximize/restore by double clicking on tab
 * Close Window option in tab context menu
 * replaced tab bar's default toolbar context menu with Restore, Toolbars, Minimize, Maximize and Close Window options
+* standard Restore/Move/Size/Minimize/Maximize/Close context menu on slim title bar
+* move window by drag slim title bar
 * resize tiles to preserve preferred number of newtab tiles
 
-The reduced space above the tab bar might inconvenience moving a window.
-The Drag-2-Move extension might reduce the inconvenience.
+The reduced space above the tab bar might inconvenience moving a window,
+but one can move the window by dragging the slim title bar.
+The Drag-2-Move extension might further reduce the inconvenience.
 
 ## Screenshots
 

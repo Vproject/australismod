@@ -83,10 +83,10 @@ function shutdown(data, reason) {
 		unloadFromWindow(domWindow);
 	}
 
+	/* unload css */
 	if(stylesheetService && cssdata) {
 		stylesheetService.unregisterSheet(cssdata, stylesheetService.USER_SHEET);
 	}
-
 }
 
 
@@ -138,14 +138,8 @@ function loadIntoWindow(window) {
 
 	/* listen for double click on tabs, call dblclicklistener() and initializes tabs */
 	maximizeontabdoubleclick(document);
-
-	/*
-		listen for opening of a tab,
-		call scalenewtabtiles() to resize tiles instead of reducing the number of tiles
-	*/
-	window.addEventListener("TabOpen", scalenewtabtiles);
-	
 }
+
 
 function unloadFromWindow(window) {
 	if (!window)
@@ -181,11 +175,6 @@ function unloadFromWindow(window) {
 		tabs.removeEventListener('dblclick',dblclicklistener ,true);
 		tabs.removeEventListener('dblclick',dblclicklistener ,false);
 	}
-
-	if(scalenewtabtiles) {
-		window.removeEventListener("TabOpen", scalenewtabtiles ,true);
-		window.removeEventListener("TabOpen", scalenewtabtiles ,false);
-	}
 }
 
 
@@ -201,8 +190,10 @@ let windowListener = {
 
 	onCloseWindow: function(aWindow) {},
 	onWindowTitleChange: function(aWindow, aTitle) {
+		let window = aWindow.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowInternal || Ci.nsIDOMWindow);
+		
 		/* synchronizes window title with small title bar */
-		let titlebartextlabel = aWindow.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowInternal || Ci.nsIDOMWindow).document.getElementById(titlebartextlabelid);
+		let titlebartextlabel = window.document.getElementById(titlebartextlabelid);
 		if(titlebartextlabel)
 			titlebartextlabel.setAttribute('value', aTitle);
 	}
@@ -276,8 +267,11 @@ function changestyles() {
 	{
 		stylesheetService = Cc['@mozilla.org/content/style-sheet-service;1'].getService(Components.interfaces.nsIStyleSheetService);
 
+		let newtabgrid = newtabcss();
+
 	/*
 		* style new titlebar
+		* allow dragging a window by the new titletoolbar (and more)
 		* put navbar below new titlebar (using -moz-box-ordinal-group)
 		* adjust colors, borders for new toolbar order
 		* reduce padding, margins (including space above tabbar)
@@ -299,6 +293,7 @@ function changestyles() {
 	min-height: 14px !important;\
 	background-image: linear-gradient(rgba(253, 253, 253, 0.45), rgba(255, 255, 255, 0));\
 	border-color: #a8b0b7 !important;\
+	-moz-binding: url(\"chrome://browser/content/customizableui/toolbar.xml#toolbar-drag\");\
 }\
 \
 #nav-bar \
@@ -318,6 +313,7 @@ function changestyles() {
 {\
 	padding-bottom: 0px !important;\
 	padding-top: 0px !important;\
+	-moz-box-align: center !important;\
 }\
 \
 #back-button \
@@ -340,25 +336,7 @@ function changestyles() {
 #TabsToolbar \
 {\
 	margin-top: 0px !important;\
-}\
-\
-.newtab-cell \
-{\
-    -moz-box-flex: 1;\
-}\
-\
-.newtab-row \
-{\
-    -moz-box-flex: 1;\
-    display: -moz-box;\
-}\
-#newtab-grid \
-{\
-	display: -moz-box;\
-	-moz-box-orient: vertical;\
-	margin-bottom: 25px;\
-	overflow: visible !important;\
-}';
+}'+newtabgrid;
 
 		cssdata = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService).newURI('data:text/css,' + encodeURIComponent(css), null, null);
 		if(!stylesheetService.sheetRegistered(cssdata, stylesheetService.USER_SHEET))
@@ -436,52 +414,231 @@ function maximizeontabdoubleclick(document) {
 /*
 	modify about:newtab page to resize tiles instead of reducing the number of visible tiles
 */
-function scalenewtabtiles(event) {
-	let browser = event.target.linkedBrowser;
-	if(browser.currentURI.asciiSpec == 'about:newtab') {
+function newtabcss () {
+	
+		/* function to be inserted in xbl constructor */
+		let scalenewtabtilesfunc = function(gridnode) {
 
-		let grid = browser.contentWindow.gGrid;
-		if(grid && grid._shouldRenderGrid) {
-
-			/* override function to prevent recalculation of grid dimensions */
-			grid._shouldRenderGrid = function() {return false;};
-			grid._resizeGrid = function() { };
-
-
-			/*
-				move tiles in row elements
-			*/
-			let gridnode = grid._node;
-			gridnode.style = 'display: none;';
-
-			let document = browser.contentDocument;
-
-			let newgrid = document.createDocumentFragment();
-			let cells = gridnode.children;
-			let numcell = cells.length;
-
-			/* create namespaced element, otherwise contextmenu won't show on right click */
-			let protorow = document.createElementNS('http://www.w3.org/1999/xhtml','div');
-			protorow.className = 'newtab-row';
-			
-			/* load gGridPrefs.gridRows and gGridPrefs.gridColums to local variables */
-			let {gridRows, gridColumns} = browser.contentWindow.gGridPrefs;
-
-			for(let i = 0, j, k=0; i<gridRows; i++)
-			{
-				let row = protorow.cloneNode(false);
-				for(j = 0; j<gridColumns && k < numcell; j++, k++)
-				{
-					let cell = cells[0];
-					gridnode.removeChild(cell);
-					row.appendChild(cell);
-				}
-				newgrid.appendChild( row );
+			if(!window || window.hasrows) {
+				console.log("australismod: scalenewtabtilesfunc: !window="+!window+" window.hasrows="+window.hasrows);
+				return;
 			}
-			gridnode.appendChild(newgrid);
+			window.hasrows = true;
+			
+			let grid = window.gGrid;
+			if(grid) if(grid._shouldRenderGrid ) if(grid._resizeGrid) {
+				gridnode.style = "display: none;";
 
-			gridnode.style = '';
+				/* override function to prevent recalculation of grid dimensions */
+				grid._resizeGridbackup = grid._resizeGrid;
+				grid._shouldRenderGridbackup = grid._shouldRenderGrid;
+				grid._resizeGrid = function() { };
+				grid._shouldRenderGrid = function() {return false;};
 
-		}
-	}
+				/* create namespaced element, otherwise contextmenu might not show on right click */
+				let protorow = document.createElementNS("http://www.w3.org/1999/xhtml","div");
+				protorow.className = "newtab-row";
+
+				/* load gGridPrefs.gridRows and gGridPrefs.gridColums to local variables */
+				let {gridRows, gridColumns} = window.gGridPrefs;
+				
+				let cells = gridnode.children;
+				let numcell = Math.min(cells.length, gridRows*gridColumns);
+
+				let newgrid = document.createDocumentFragment();
+				
+				for(let i = 0, j, k = 0; i < gridRows; i++)
+				{
+					let row = protorow.cloneNode(false);
+					for(j = 0; j<gridColumns ; j++, k++)
+					{
+						if(k >= numcell)
+							break;
+						let cell = cells[0];
+						gridnode.removeChild(cell);
+						row.appendChild(cell);
+					}
+					newgrid.appendChild( row );
+				}
+				
+				if(window.undoscaling)
+				{
+					/* AddonListener already exists. Only insert grid with rows. */
+					gridnode.appendChild(newgrid);
+					gridnode.style = "";
+					return;
+				}
+				
+				/* insert script that restores fixed size tiles */
+				let undoscaling = function() 
+				{
+					try {
+						Components.utils.import("resource://gre/modules/AddonManager.jsm");
+					} catch(ex) {
+						console.log("australismod: addonmanager import failed. ex="+ex);
+						if(!AddonManager) {
+							console.log("!AddonManager");
+							return;
+						}
+					}
+					let addondisabled = {
+						onEnabled: function(addon)
+						{
+							if (addon.id == "australismod@V.project")
+							{
+								try {
+									if(!window || window.hasrows || !window.gGrid) {
+										console.log("australismod: onenabled handler: !window="+!window+" window.hasrows="+window.hasrows+" !window.gGrid="+!window.gGrid);
+										AddonManager.removeAddonListener(this);
+										return;
+									}
+								} catch(ex) {
+									console.log("australismod: newtab onenabled handler failed. ex="+ex);
+									AddonManager.removeAddonListener(this);
+									return;
+								}
+								try {
+									if(window.gGrid._node)
+									{
+										if (window.gGrid._node.scalingtiles )
+										{
+											window.gGrid._node.scalingtiles();
+										}
+										else
+										{
+											AddonManager.removeAddonListener(this);
+										}
+									}
+									else
+									{
+										AddonManager.removeAddonListener(this);
+									}
+								} catch(ex) {
+									console.log("australismod: window.gGrid._node.scalingtiles() failed. ex="+ex);
+									AddonManager.removeAddonListener(this);
+									return;
+								}
+								
+							}
+						},
+						onDisabled: function(addon)
+						{
+							if (addon.id == "australismod@V.project")
+							{
+								try {
+									
+									if(!window || !window.hasrows) {
+										console.log("australismod: ondisabled handler: !window="+!window+" !window.hasrows="+!window.hasrows);
+										return;
+									}
+									
+									let grid = window.gGrid;
+									if(grid) if(grid._shouldRenderGrid ) {
+						
+										let refCell = document.querySelector(".newtab-cell");
+								        grid._cellMargin = parseFloat(getComputedStyle(refCell).marginTop) * 2;
+								        grid._cellHeight = refCell.offsetHeight + grid._cellMargin;
+								        grid._cellWidth = refCell.offsetWidth + grid._cellMargin;
+	
+	
+										/* remove rows */
+										let gridnode = grid._node;
+										let rows = gridnode.getElementsByClassName("newtab-row");
+	
+										for(let i=rows.length-1; i>=0; --i)
+										{
+											gridnode.removeChild(rows[i]);
+										}
+										
+										window.hasrows = false;
+										
+										/* restore functions and allow recalculation of grid dimensions */
+										grid._resizeGrid = grid._resizeGridbackup;
+										grid._shouldRenderGrid = grid._shouldRenderGridbackup;
+										
+										/* render cells/tiles */
+								        grid._renderGrid();
+								        grid._resizeGrid();
+								        grid._renderSites();
+										
+									}
+								} catch(ex) {
+									console.log("australismod: ondisabled handler: ex="+ex);
+								}
+								
+							}
+						}
+					};
+					try {
+						AddonManager.addAddonListener(addondisabled);
+					} catch(ex) {
+						console.log("australismod: adding AddonListener failed. ex="+ex);
+					}
+				};
+				let undo = document.createElementNS("http://www.w3.org/1999/xhtml","script");
+				undo.type = "text/javascript;version=1.8";
+				undo.innerHTML = "let undoscaling ="+undoscaling.toSource()+";\n\nundoscaling();";
+				
+				gridnode.parentElement.appendChild( undo );				
+				
+				gridnode.appendChild(newgrid);
+				
+				gridnode.style = "";
+			}
+		};
+		
+		/* build xbl source */
+		let scalenewtabtilesxbl = "\
+<?xml version=\"1.0\"?>\
+<bindings xmlns=\"http://www.mozilla.org/xbl\">\
+	<binding id=\"scalingnewtabtiles\">\
+		<content>\
+			<children/>\
+		</content>\
+		<implementation>\
+			<constructor>\n\
+				scalingtiles();\
+			</constructor>\
+			<method name=\"scalingtiles\">\
+			<body>\
+				let scalenewtabtilesfunc = "+scalenewtabtilesfunc.toSource().replace(/[<>]/g, function(ltgt){ return ((ltgt == '<')? '&lt;' : '&gt;') } )+";\
+				scalenewtabtilesfunc(this);\
+			</body>\
+			</method>\
+		</implementation>\
+	</binding>\
+</bindings>";
+
+		/* newtab css, uri encode xbl and bind it to newtab-grid */
+		let newtabgrid = '\
+#newtab-grid \
+{\
+	-moz-binding: url(\"data:text/xml,'+encodeURIComponent(scalenewtabtilesxbl)+'\") !important;\
+	display: -moz-box;\
+	-moz-box-orient: vertical;\
+	margin-bottom: 25px;\
+	overflow: visible !important;\
+}\
+\
+.newtab-cell \
+{\
+	-moz-box-flex: 1;\
+}\
+\
+.newtab-row \
+{\
+	-moz-box-flex: 1;\
+	display: -moz-box;\
+}\
+\
+#newtab-search-form {\
+	height: auto !important;\
+	margin-bottom: 0px !important;\
+}\
+\
+#newtab-undo-container {\
+	margin-bottom: 0px !important;\
+}';
+
+	return newtabgrid;
 }
